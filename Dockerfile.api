@@ -1,0 +1,27 @@
+FROM node:20-slim AS base
+RUN npm install -g bun
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json bun.lockb ./
+COPY apps/api/package.json apps/api/
+RUN bun install --frozen-lockfile --production
+
+# Build
+COPY apps/api apps/api
+RUN bun run --filter api build
+
+# Production
+FROM node:20-slim AS runner
+RUN npm install -g bun
+WORKDIR /app
+
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=base /app/apps/api/dist ./apps/api/dist
+COPY --from=base /app/apps/api/package.json ./apps/api/
+
+EXPOSE 3000
+
+CMD ["node", "apps/api/dist/main.js"]
