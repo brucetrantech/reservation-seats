@@ -2,6 +2,8 @@
 
 A public seat reservation system where authenticated users can view, hold, and reserve seats through a secure payment flow. Built as a demonstration of engineering judgment, system design, and practical trade-offs.
 
+> **SDLC Score: 8.2/10** — See [Project Consideration](docs/project-consideration.md) for full analysis.
+
 ## Architecture
 
 ```
@@ -20,9 +22,11 @@ A public seat reservation system where authenticated users can view, hold, and r
 | Frontend | React 18, Vite, TypeScript, Zustand, TailwindCSS |
 | Backend | NestJS, DrizzleORM, PostgreSQL 15, Passport.js |
 | Auth | Google OAuth 2.0, JWT (httpOnly cookie, 90-day session) |
-| Payment | Napas gateway (Vietnamese online banking, sandbox) |
+| Payment | Napas gateway (Vietnamese online banking, sandbox) + Mock payment |
 | Infra | AWS (ECS Fargate, RDS, ALB, S3+CloudFront), Terraform |
-| CI/CD | GitHub Actions |
+| CI/CD | GitHub Actions (lint, test, security scan, deploy) |
+| Testing | Jest (unit + integration), Playwright (E2E) |
+| Security | CodeQL, Gitleaks, Trivy, OWASP security headers |
 | Package Manager | Bun |
 
 ## Features
@@ -32,7 +36,13 @@ A public seat reservation system where authenticated users can view, hold, and r
 - **Pessimistic seat locking** — prevents double-booking via `SELECT FOR UPDATE`
 - **5-minute hold window** — auto-releases if payment isn't completed
 - **Napas payment integration** — redirect-based, IPN webhook verification
+- **Mock payment** — instant demo flow for testing without payment gateway
+- **Email notifications** — confirmation email with PDF ticket attachment
+- **Security hardened** — OWASP headers, rate limiting, input validation
 - **Fail-fast config** — Zod-validated environment variables at startup
+- **Multi-environment** — Local, Development, UAT, Production configs
+
+> 📋 Full user stories & acceptance criteria: [`docs/requirements/user-stories.md`](docs/requirements/user-stories.md)
 
 ## Quick Start (Local)
 
@@ -82,26 +92,29 @@ reservation-seats/
 │   │   ├── src/
 │   │   │   ├── modules/
 │   │   │   │   ├── auth/     # Google OAuth, JWT, guards
-│   │   │   │   ├── seats/    # Seat availability
+│   │   │   │   ├── seats/    # Seat availability + cron expiry
 │   │   │   │   ├── bookings/ # Hold & confirm logic
-│   │   │   │   └── payments/ # Napas integration
-│   │   │   ├── database/     # Drizzle schema, migrations, seed
+│   │   │   │   ├── payments/ # Napas + Mock payment
+│   │   │   │   └── notifications/ # Email + PDF ticket
+│   │   │   ├── database/     # Drizzle schema, migrations, repositories
 │   │   │   ├── config/       # Env validation (Zod)
-│   │   │   └── common/       # Guards, decorators, filters
-│   │   └── package.json
-│   └── web/                  # React frontend
-│       ├── src/
-│       │   ├── pages/        # Login, Seats, Payment, Confirmation
-│       │   ├── components/   # SeatMap, AuthGuard, etc.
-│       │   ├── stores/       # Zustand (auth, seat, booking)
-│       │   └── api/          # HTTP client
-│       └── package.json
+│   │   │   └── common/       # Guards, decorators, middleware
+│   │   └── test/             # Integration tests
+│   ├── web/                  # React frontend
+│   │   └── src/
+│   │       ├── pages/        # Login, Seats, Payment, Confirmation
+│   │       ├── stores/       # Zustand (auth, seat, booking)
+│   │       └── api/          # HTTP client
+│   └── e2e/                  # Playwright E2E tests
+├── docs/                     # Project documentation
+│   ├── requirements/         # User stories, test plan
+│   └── project-consideration.md  # SDLC analysis & scaling plan
+├── environments/             # Multi-environment configs
 ├── infra/                    # Terraform (AWS)
-├── scripts/                  # Setup & utility scripts
-├── .github/workflows/        # CI/CD pipelines
+├── .github/workflows/        # CI/CD + security pipelines
+├── SECURITY.md               # Security policy & OWASP compliance
 ├── docker-compose.yml        # Local PostgreSQL
-├── Dockerfile.api            # Production API image
-└── package.json              # Workspace root
+└── Dockerfile.api            # Production API image
 ```
 
 ## API Endpoints
@@ -135,15 +148,23 @@ reservation-seats/
 
 ## Environment Configuration
 
-Each site has a `.env.example` template. Run `./scripts/setup-env.sh` to generate all `.env` files, then paste your real values.
+This project supports **4 environments**: Local, Development, UAT, and Production.
+
+| Environment | Trigger | Secrets |
+|-------------|---------|---------|
+| Local | `bun run dev` | `.env` file |
+| Development | Push to `main` | GitHub Secrets |
+| UAT | Push to `release/*` | GitHub Secrets |
+| Production | Git tag `v*` | AWS Secrets Manager |
+
+> 📖 Full environment matrix and setup: [`environments/README.md`](environments/README.md)
 
 | File | Purpose |
 |------|---------|
-| `apps/api/.env.example` | Backend: DB, OAuth, JWT, Napas |
-| `apps/web/.env.example` | Frontend: API URL |
-| `infra/terraform.tfvars.example` | AWS infrastructure variables |
-
-See the [Environment Configuration section](IMPLEMENTATION_PLAN.md#7-environment-configuration-strategy) in the implementation plan for full details.
+| `apps/api/.env.example` | Backend: DB, OAuth, JWT, Napas, SMTP |
+| `environments/.env.development` | Shared dev environment template |
+| `environments/.env.uat` | UAT environment template |
+| `environments/.env.production` | Production environment template |
 
 ## Scripts
 
@@ -153,13 +174,37 @@ See the [Environment Configuration section](IMPLEMENTATION_PLAN.md#7-environment
 | `bun run dev` | Start API + Web in development |
 | `bun run build` | Production build (all apps) |
 | `bun run lint` | ESLint across all workspaces |
-| `bun run test` | Run all tests |
+| `bun run test` | Run unit tests |
+| `bun run test:cov` | Run unit tests with coverage report |
+| `bun run test:integration` | Run integration tests (needs DB) |
+| `bun run test:e2e` | Run Playwright E2E tests |
 | `bun run --filter api db:migrate` | Apply database migrations |
 | `bun run --filter api db:seed` | Seed 3 seats |
 | `bun run --filter api db:generate` | Generate migration from schema |
 | `bun run --filter api db:studio` | Open Drizzle Studio |
 | `docker compose up -d` | Start PostgreSQL |
 | `docker compose down -v` | Stop & remove DB data |
+
+## Testing
+
+```bash
+# Unit tests (37 tests across 7 suites)
+bun run test
+
+# Integration tests (API endpoints with real DB)
+bun run test:integration
+
+# E2E tests (Playwright browser automation)
+bun run test:e2e
+```
+
+| Layer | Coverage | Tools |
+|-------|----------|-------|
+| Unit | Services, middleware, utilities | Jest, ts-jest |
+| Integration | API endpoints, auth guards, DB transactions | Jest, Supertest |
+| E2E | User flows (seats, auth, reservation) | Playwright |
+
+> 📋 Test strategy details: [`docs/requirements/test-plan.md`](docs/requirements/test-plan.md)
 
 ## Deployment (AWS)
 
@@ -181,6 +226,17 @@ aws cloudfront create-invalidation --distribution-id <id> --paths "/*"
 
 Full deployment guide: [Section 8.2 in IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
 
+## CI/CD Pipelines
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push/PR to main | Lint, unit tests, integration tests, build |
+| `security.yml` | Push/PR + weekly | CodeQL, Gitleaks, Trivy, dependency audit |
+| `deploy-api.yml` | Push to main (api changes) | Build & deploy API to ECS |
+| `deploy-web.yml` | Push to main (web changes) | Build & deploy frontend to S3+CloudFront |
+| `deploy-uat.yml` | Push to release/* | Deploy to UAT + run E2E tests |
+| `deploy-prod.yml` | Tag v* | Deploy to production (with environment approval) |
+
 ## Design Decisions & Trade-offs
 
 | Decision | Reasoning |
@@ -195,12 +251,28 @@ Full deployment guide: [Section 8.2 in IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PL
 
 ## Security
 
-- CSRF protection via SameSite=Strict cookies
-- Rate limiting on auth and payment endpoints
-- HMAC-SHA256 signature verification on payment callbacks
-- Input validation (class-validator on backend, Zod on frontend)
-- CORS restricted to frontend origin
-- Secrets never committed — loaded from env vars / AWS Secrets Manager
+- **OWASP Top 10 compliant** — security headers (CSP, HSTS, X-Frame-Options, etc.)
+- **Rate limiting** — 100 requests/min per IP
+- **CSRF protection** via SameSite=Strict cookies
+- **Input validation** — class-validator (backend), Zod (config)
+- **Payment signature** — HMAC-SHA512 verification on IPN callbacks
+- **CORS** restricted to frontend origin only
+- **Secret scanning** — Gitleaks pre-commit + CI
+- **Container scanning** — Trivy for Docker vulnerabilities
+- **SAST** — CodeQL for code-level security analysis
+- **Secrets management** — env vars locally, AWS Secrets Manager in production
+
+> 🔒 Full security policy & OWASP compliance matrix: [`SECURITY.md`](SECURITY.md)
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`docs/requirements/user-stories.md`](docs/requirements/user-stories.md) | User stories & acceptance criteria (6 epics, 13 stories) |
+| [`docs/requirements/test-plan.md`](docs/requirements/test-plan.md) | Testing strategy & coverage targets |
+| [`docs/project-consideration.md`](docs/project-consideration.md) | SDLC assessment, feature analysis, scale-up plan |
+| [`environments/README.md`](environments/README.md) | Multi-environment configuration guide |
+| [`SECURITY.md`](SECURITY.md) | Security policy & OWASP Top 10 compliance |
 
 ## License
 
