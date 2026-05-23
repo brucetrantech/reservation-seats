@@ -9,7 +9,10 @@
     "start:prod": "NODE_ENV=production node dist/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "test": "jest",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:integration": "jest --config jest-integration.config.js",
+    "test:e2e": "cd ../e2e && bun run test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "bun run src/database/seed.ts",
@@ -49,9 +52,11 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.11.6",
+    "@types/supertest": "^7.2.0",
     "drizzle-kit": "^0.24.0",
     "eslint": "^9.9.0",
     "jest": "^29.7.0",
+    "supertest": "^7.2.2",
     "ts-jest": "^29.2.0",
     "typescript": "^5.5.0"
   }

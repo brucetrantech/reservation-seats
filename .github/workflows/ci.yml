@@ -2,13 +2,29 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   pull_request:
     branches: [main]
 
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: reservation_seats_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +38,49 @@ jobs:
       - name: Lint
         run: bun run lint
 
-      - name: Test
+      - name: Unit Tests
         run: bun run test
+
+      - name: Integration Tests
+        env:
+          NODE_ENV: test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: reservation_seats_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          DATABASE_SSL: false
+          JWT_SECRET: ci-test-secret-must-be-at-least-32-characters
+          GOOGLE_CLIENT_ID: test-client-id
+          GOOGLE_CLIENT_SECRET: test-client-secret
+          GOOGLE_CALLBACK_URL: http://localhost:3000/auth/google/callback
+          FRONTEND_URL: http://localhost:5173
+          NAPAS_TMN_CODE: TEST
+          NAPAS_HASH_SECRET: test-hash-secret-at-least-32-characters-long
+          NAPAS_PAYMENT_URL: https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+          NAPAS_RETURN_URL: http://localhost:3000/payments/return
+          NAPAS_IPN_URL: http://localhost:3000/payments/ipn
+          SMTP_HOST: smtp.test.com
+          SMTP_USER: test@test.com
+          SMTP_PASS: test
+          SMTP_FROM_EMAIL: test@test.com
+        run: bun run test:integration
 
       - name: Build
         run: bun run build
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: bun pm audit || true
+        continue-on-error: true

@@ -6,6 +6,9 @@
     "dev": "bun run --filter '*' dev",
     "build": "bun run --filter '*' build",
     "lint": "bun run --filter '*' lint",
-    "test": "bun run --filter '*' test"
+    "test": "bun run --filter api test",
+    "test:cov": "bun run --filter api test:cov",
+    "test:integration": "bun run --filter api test:integration",
+    "test:e2e": "cd apps/e2e && bun run test"
   }
 }

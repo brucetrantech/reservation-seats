@@ -1,0 +1,118 @@
+name: Deploy UAT
+
+on:
+  push:
+    branches: ['release/**']
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: reservation-api
+  ECS_CLUSTER: reservation-cluster-uat
+  ECS_SERVICE: reservation-api-uat
+
+jobs:
+  deploy-api:
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f Dockerfile.api -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG-uat .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG-uat $ECR_REGISTRY/$ECR_REPOSITORY:uat-latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG-uat
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:uat-latest
+
+      - name: Deploy to ECS (UAT)
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE
+
+  deploy-web:
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend (UAT)
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_GOOGLE_LOGIN_URL: ${{ secrets.VITE_API_BASE_URL }}/auth/google
+          VITE_SEAT_HOLD_DURATION_SECONDS: "300"
+        run: bun run --filter web build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to S3 (UAT)
+        run: |
+          aws s3 sync apps/web/dist/ s3://${{ secrets.S3_BUCKET_NAME_UAT }} --delete
+
+      - name: Invalidate CloudFront (UAT)
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_UAT }} \
+            --paths "/*"
+
+  e2e-tests:
+    needs: [deploy-api, deploy-web]
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: |
+          cd apps/e2e
+          bun install
+
+      - name: Install Playwright browsers
+        run: |
+          cd apps/e2e
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        env:
+          E2E_BASE_URL: ${{ secrets.UAT_FRONTEND_URL }}
+          E2E_API_URL: ${{ secrets.UAT_API_URL }}
+        run: |
+          cd apps/e2e
+          bun run test

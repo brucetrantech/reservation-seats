@@ -1,0 +1,26 @@
+title = "Gitleaks Configuration"
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|apikey)[\s]*[=:]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?'''
+tags = ["key", "API"]
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT Secret"
+regex = '''(?i)(jwt[_-]?secret)[\s]*[=:]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?'''
+tags = ["key", "JWT"]
+
+[[rules]]
+id = "database-password"
+description = "Database Password"
+regex = '''(?i)(database[_-]?password|db[_-]?pass)[\s]*[=:]\s*['"]?([^\s'"]{8,})['"]?'''
+tags = ["password", "database"]
+
+[allowlist]
+paths = [
+  '''.env.example$''',
+  '''environments/''',
+  '''\.md$''',
+]
