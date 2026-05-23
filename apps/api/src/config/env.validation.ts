@@ -29,6 +29,14 @@ export const envSchema = z.object({
   NAPAS_IPN_URL: z.string().url(),
 
   SEAT_HOLD_DURATION_SECONDS: z.coerce.number().default(300),
+
+  SMTP_HOST: z.string().min(1),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_SECURE: z.string().default('false'),
+  SMTP_USER: z.string().min(1),
+  SMTP_PASS: z.string().min(1),
+  SMTP_FROM_NAME: z.string().default('Reservation Seats'),
+  SMTP_FROM_EMAIL: z.string().email(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

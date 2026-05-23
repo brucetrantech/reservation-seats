@@ -5,9 +5,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import { PaymentsRepository, BookingsRepository, SeatsRepository } from '@/database';
+import { PaymentsRepository, BookingsRepository, SeatsRepository, UsersRepository } from '@/database';
 import { EnvConfig } from '@/config';
 import { PaymentMethod } from './dto/create-payment.dto';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 
 @Injectable()
 export class PaymentsService {
@@ -15,7 +16,9 @@ export class PaymentsService {
     private readonly paymentsRepo: PaymentsRepository,
     private readonly bookingsRepo: BookingsRepository,
     private readonly seatsRepo: SeatsRepository,
+    private readonly usersRepo: UsersRepository,
     private readonly config: ConfigService<EnvConfig, true>,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async createPayment(userId: string, bookingId: string, method: PaymentMethod = PaymentMethod.NAPAS) {
@@ -187,6 +190,34 @@ export class PaymentsService {
         }, tx);
       }
     });
+
+    // Send confirmation email (fire-and-forget, non-blocking)
+    this.sendConfirmationEmail(bookingId, transactionNo);
+  }
+
+  private async sendConfirmationEmail(bookingId: string, transactionNo?: string) {
+    try {
+      const booking = await this.bookingsRepo.findById(bookingId);
+      if (!booking) return;
+
+      const [user, seat] = await Promise.all([
+        this.usersRepo.findById(booking.userId),
+        this.seatsRepo.findById(booking.seatId),
+      ]);
+
+      if (!user || !seat) return;
+
+      await this.notifications.sendReservationConfirmation({
+        userName: user.name,
+        userEmail: user.email,
+        seatNumber: seat.seatNumber,
+        bookingId: booking.id,
+        transactionNo: transactionNo || 'N/A',
+        amount: '50000',
+      });
+    } catch {
+      // Already handled inside NotificationsService
+    }
   }
 
   private async failPayment(paymentId: string, bookingId: string) {

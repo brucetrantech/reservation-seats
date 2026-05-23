@@ -20,6 +20,12 @@ export class SeatsRepository {
       .orderBy(seats.seatNumber);
   }
 
+  async findById(seatId: string) {
+    return this.db.query.seats.findFirst({
+      where: eq(seats.id, seatId),
+    });
+  }
+
   async findByIdForUpdate(tx: any, seatId: string) {
     const [seat] = await tx
       .select()
