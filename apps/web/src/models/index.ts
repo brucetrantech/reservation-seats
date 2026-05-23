@@ -18,7 +18,13 @@ export interface Booking {
   expiresAt?: string;
 };
 
+export type PaymentMethod = 'napas' | 'mock';
+
 export interface PaymentResult {
   paymentId: string;
-  paymentUrl: string;
+  paymentUrl?: string;
+  method: PaymentMethod;
+  success?: boolean;
+  transactionNo?: string;
+  reason?: string;
 };

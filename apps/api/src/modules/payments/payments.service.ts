@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PaymentsRepository, BookingsRepository, SeatsRepository } from '@/database';
 import { EnvConfig } from '@/config';
+import { PaymentMethod } from './dto/create-payment.dto';
 
 @Injectable()
 export class PaymentsService {
@@ -17,7 +18,7 @@ export class PaymentsService {
     private readonly config: ConfigService<EnvConfig, true>,
   ) {}
 
-  async createPayment(userId: string, bookingId: string) {
+  async createPayment(userId: string, bookingId: string, method: PaymentMethod = PaymentMethod.NAPAS) {
     const booking = await this.bookingsRepo.findByIdAndUser(bookingId, userId);
 
     if (!booking) {
@@ -30,6 +31,10 @@ export class PaymentsService {
 
     const txnRef = `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const amount = 50000; // 50,000 VND per seat (demo)
+
+    if (method === PaymentMethod.MOCK) {
+      return this.processMockPayment(userId, bookingId, txnRef, amount);
+    }
 
     // Build Napas/VNPay payment URL
     const paymentUrl = this.buildPaymentUrl(txnRef, amount, bookingId);
@@ -46,7 +51,7 @@ export class PaymentsService {
     // Link payment to booking
     await this.bookingsRepo.setPaymentId(bookingId, payment.id);
 
-    return { paymentId: payment.id, paymentUrl };
+    return { paymentId: payment.id, paymentUrl, method: PaymentMethod.NAPAS };
   }
 
   async handleReturn(query: Record<string, string>) {
@@ -103,6 +108,56 @@ export class PaymentsService {
 
   getFrontendUrl() {
     return this.config.get('FRONTEND_URL');
+  }
+
+  /**
+   * Mock payment flow — simulates the full Napas verification internally.
+   * Creates a payment record, generates a mock transaction number,
+   * verifies the same data (amount, booking, user), and confirms immediately.
+   */
+  private async processMockPayment(
+    userId: string,
+    bookingId: string,
+    txnRef: string,
+    amount: number,
+  ) {
+    const mockTransactionNo = `MOCK_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+    // Create payment record (same as Napas flow)
+    const payment = await this.paymentsRepo.create({
+      bookingId,
+      userId,
+      amount: amount.toString(),
+      napasTxnRef: txnRef,
+      status: 'initiated',
+      paymentUrl: '', // No external URL for mock
+    });
+
+    await this.bookingsRepo.setPaymentId(bookingId, payment.id);
+
+    // Simulate Napas verification: validate txnRef, amount, and booking ownership
+    const verifiedPayment = await this.paymentsRepo.findByTxnRef(txnRef);
+    if (!verifiedPayment || verifiedPayment.userId !== userId) {
+      await this.failPayment(payment.id, bookingId);
+      return { paymentId: payment.id, success: false, reason: 'mock_verification_failed', method: PaymentMethod.MOCK };
+    }
+
+    const expectedAmount = (amount * 100).toString(); // Same conversion as Napas
+    const recordedAmount = (parseFloat(verifiedPayment.amount) * 100).toString();
+    if (recordedAmount !== expectedAmount) {
+      await this.failPayment(payment.id, bookingId);
+      return { paymentId: payment.id, success: false, reason: 'mock_amount_mismatch', method: PaymentMethod.MOCK };
+    }
+
+    // All checks passed — confirm payment (same as successful Napas return)
+    await this.confirmPayment(payment.id, bookingId, mockTransactionNo);
+
+    return {
+      paymentId: payment.id,
+      success: true,
+      transactionNo: mockTransactionNo,
+      method: PaymentMethod.MOCK,
+    };
   }
 
   private async confirmPayment(

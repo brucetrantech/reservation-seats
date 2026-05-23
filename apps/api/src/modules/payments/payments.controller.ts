@@ -13,7 +13,7 @@ export class PaymentsController {
     @CurrentUser() user: { id: string },
     @Body() dto: CreatePaymentDto,
   ) {
-    return this.paymentsService.createPayment(user.id, dto.bookingId);
+    return this.paymentsService.createPayment(user.id, dto.bookingId, dto.method);
   }
 
   @Public()

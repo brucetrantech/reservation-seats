@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useBookingStore } from '@/stores/bookingStore';
+import { PaymentMethod } from '@/models';
 import Header from '@/components/Header';
 
 export default function PaymentPage() {
@@ -10,6 +11,7 @@ export default function PaymentPage() {
     useBookingStore();
   const navigate = useNavigate();
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('mock');
 
   useEffect(() => {
     if (!isAuthenticated || !currentBooking) {
@@ -63,6 +65,42 @@ export default function PaymentPage() {
           </div>
         </div>
 
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Payment method
+          </label>
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+              <input
+                type="radio"
+                name="method"
+                value="mock"
+                checked={selectedMethod === 'mock'}
+                onChange={() => setSelectedMethod('mock')}
+                className="text-green-600"
+              />
+              <div>
+                <span className="font-medium text-gray-900">Quick Pay (Demo)</span>
+                <p className="text-xs text-gray-500">Instant mock transaction — no redirect</p>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+              <input
+                type="radio"
+                name="method"
+                value="napas"
+                checked={selectedMethod === 'napas'}
+                onChange={() => setSelectedMethod('napas')}
+                className="text-green-600"
+              />
+              <div>
+                <span className="font-medium text-gray-900">Napas / VNPay</span>
+                <p className="text-xs text-gray-500">Redirect to online banking gateway</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
             {error}
@@ -70,7 +108,7 @@ export default function PaymentPage() {
         )}
 
         <button
-          onClick={() => createPayment(currentBooking.id)}
+          onClick={() => createPayment(currentBooking.id, selectedMethod)}
           disabled={isLoading}
           className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50"
         >
